@@ -56,6 +56,27 @@ vercel dev
 Then submit the form and confirm the timestamp matches the wall clock in Skopje.
 Unset `DRY_RUN` before the first real send.
 
+## Diagnosing a message that never arrives
+
+A `202` from the Messages API only means *accepted* — rejections happen asynchronously and are not
+visible in the API response. To see what actually happened, query the Reports API:
+
+```sh
+curl -s -u "$VONAGE_API_KEY:$VONAGE_API_SECRET" -G https://api.nexmo.com/v2/reports/records \
+  --data-urlencode "account_id=$VONAGE_API_KEY" \
+  --data-urlencode "product=MESSAGES" \
+  --data-urlencode "direction=outbound" \
+  --data-urlencode "date_start=$(date -u +%Y-%m-%dT00:00:00Z)"
+```
+
+Look at `status` and `error_code` in the returned records. Codes seen so far:
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| `1474` | Non-whitelisted destination | Add the number as a verified test number in the dashboard (trial accounts only) |
+
+A `total_price` of `0.0000` on a record confirms nothing was billed, i.e. nothing was sent.
+
 ## Notes
 
 - Uses the **Messages API** (`api.nexmo.com/v1/messages`) with Basic auth, which is what new Vonage
