@@ -42,6 +42,63 @@ function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
+function basicAuth(user, pass) {
+  return `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`;
+}
+
+function requireEnv(...names) {
+  const missing = names.filter((n) => !process.env[n]);
+  if (missing.length) throw new Error(`Missing config: ${missing.join(', ')}`);
+  return names.map((n) => process.env[n]);
+}
+
+/**
+ * Each provider takes (E.164 number, message text) and resolves to
+ * { ok, messageId } or { ok: false, error, status }. Selected by SMS_PROVIDER.
+ */
+const PROVIDERS = {
+  async plivo(to, text) {
+    const [authId, authToken, from] = requireEnv('PLIVO_AUTH_ID', 'PLIVO_AUTH_TOKEN', 'SMS_SENDER');
+
+    const upstream = await fetch(`https://api.plivo.com/v1/Account/${authId}/Message/`, {
+      method: 'POST',
+      headers: { Authorization: basicAuth(authId, authToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ src: from, dst: to.replace('+', ''), text }),
+    });
+    const payload = await upstream.json().catch(() => null);
+
+    if (!upstream.ok) {
+      return { ok: false, status: upstream.status, error: payload?.error || `Plivo returned ${upstream.status}` };
+    }
+    return { ok: true, messageId: payload?.message_uuid?.[0] ?? null };
+  },
+
+  async vonage(to, text) {
+    const [key, secret, from] = requireEnv('VONAGE_API_KEY', 'VONAGE_API_SECRET', 'SMS_SENDER');
+
+    const upstream = await fetch('https://api.nexmo.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        Authorization: basicAuth(key, secret),
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ channel: 'sms', message_type: 'text', from, to: to.replace('+', ''), text }),
+    });
+    const payload = await upstream.json().catch(() => null);
+
+    // Vonage accepts with 202 and reports failures as RFC 7807 problem details.
+    if (!upstream.ok) {
+      return {
+        ok: false,
+        status: upstream.status,
+        error: payload?.detail || payload?.title || `Vonage returned ${upstream.status}`,
+      };
+    }
+    return { ok: true, messageId: payload?.message_uuid ?? null };
+  },
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -73,44 +130,21 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, dryRun: true, to, text });
   }
 
-  const { VONAGE_API_KEY, VONAGE_API_SECRET, SMS_SENDER } = process.env;
-  if (!VONAGE_API_KEY || !VONAGE_API_SECRET || !SMS_SENDER) {
-    return res.status(500).json({ ok: false, error: 'SMS provider is not configured' });
+  const provider = PROVIDERS[process.env.SMS_PROVIDER || 'plivo'];
+  if (!provider) {
+    return res.status(500).json({ ok: false, error: `Unknown SMS_PROVIDER: ${process.env.SMS_PROVIDER}` });
   }
 
-  const auth = Buffer.from(`${VONAGE_API_KEY}:${VONAGE_API_SECRET}`).toString('base64');
-
-  let upstream;
-  let payload;
+  let sent;
   try {
-    upstream = await fetch('https://api.nexmo.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        channel: 'sms',
-        message_type: 'text',
-        from: SMS_SENDER,
-        to: to.replace('+', ''),
-        text,
-      }),
-    });
-    payload = await upstream.json().catch(() => null);
+    sent = await provider(to, text);
   } catch (err) {
-    return res.status(502).json({ ok: false, error: `Could not reach SMS provider: ${err.message}` });
+    return res.status(502).json({ ok: false, error: err.message });
   }
 
-  // The Messages API accepts with 202 and reports failures as RFC 7807 problem details.
-  if (!upstream.ok) {
-    return res.status(502).json({
-      ok: false,
-      error: payload?.detail || payload?.title || `SMS provider returned ${upstream.status}`,
-      providerStatus: upstream.status,
-    });
+  if (!sent.ok) {
+    return res.status(502).json({ ok: false, error: sent.error, providerStatus: sent.status ?? null });
   }
 
-  return res.status(200).json({ ok: true, to, text, messageId: payload?.message_uuid ?? null });
+  return res.status(200).json({ ok: true, to, text, messageId: sent.messageId ?? null });
 }
