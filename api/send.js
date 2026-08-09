@@ -50,10 +50,11 @@ export default async function handler(req, res) {
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
 
+  // APP_PIN is optional. When set, the page must pass it as ?k=... in the URL, so the form
+  // itself stays a single field. When unset, the whitelist below is the only gate.
   const expectedPin = process.env.APP_PIN;
-  if (!expectedPin) return res.status(500).json({ ok: false, error: 'APP_PIN is not configured' });
-  if (!constantTimeEqual(String(body.pin || ''), expectedPin)) {
-    return res.status(401).json({ ok: false, error: 'Wrong PIN' });
+  if (expectedPin && !constantTimeEqual(String(body.pin || ''), expectedPin)) {
+    return res.status(401).json({ ok: false, error: 'Wrong key' });
   }
 
   const to = normalize(body.number);

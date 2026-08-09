@@ -13,7 +13,7 @@ The timestamp is generated at request time in `Europe/Skopje`.
 
 ## How it works
 
-- [index.html](index.html) — the form (number + PIN), posts JSON to `/api/send`.
+- [index.html](index.html) — one page, one field, one button. Posts JSON to `/api/send`.
 - [api/send.js](api/send.js) — validates the PIN, normalizes the number to E.164, checks it against
   the whitelist, builds the timestamp, and calls the Vonage Messages API with `fetch`.
 - [test.js](test.js) — `node test.js` checks normalization and the timestamp. Sends nothing.
@@ -84,5 +84,8 @@ A `total_price` of `0.0000` on a record confirms nothing was billed, i.e. nothin
   Dashboard → Settings → *Default SMS Setting* and make sure it is set to **Messages API**.
 - `SMS_SENDER` defaults to `Vonage APIs`. A custom alphanumeric ID may be silently replaced by the
   Macedonian carrier; if the handset shows something else, that's the carrier, not this code.
-- No rate limiting. Serverless functions are stateless, so it would need a paid store. The PIN plus
-  a one-number whitelist is the cheap equivalent.
+- No rate limiting. Serverless functions are stateless, so it would need a paid store. The
+  whitelist plus the optional `?k=` key is the cheap equivalent.
+- `APP_PIN` is optional. Set it and bookmark `https://your-app.vercel.app/?k=THAT_VALUE` — the page
+  stays a single field, but anyone who finds the bare URL gets a 401 instead of a free SMS on your
+  credit. Leave it unset and the whitelist is the only gate.

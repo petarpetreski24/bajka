@@ -45,9 +45,6 @@
   <input id="number" name="number" type="tel" inputmode="tel" autocomplete="tel"
          placeholder="+389 75 560 524" value="+389 75 560 524" required>
 
-  <label for="pin">PIN</label>
-  <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
-
   <button type="submit" id="submit">Испрати</button>
   <div id="result" role="status" aria-live="polite"></div>
 </form>
@@ -70,7 +67,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           number: document.getElementById('number').value,
-          pin: document.getElementById('pin').value,
+          // Optional shared key, taken from ?k=... so there is nothing to type.
+          pin: new URLSearchParams(location.search).get('k') || '',
         }),
       });
       const data = await response.json();
