@@ -77,39 +77,39 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: 'SMS provider is not configured' });
   }
 
+  const auth = Buffer.from(`${VONAGE_API_KEY}:${VONAGE_API_SECRET}`).toString('base64');
+
+  let upstream;
   let payload;
   try {
-    const upstream = await fetch('https://rest.nexmo.com/sms/json', {
+    upstream = await fetch('https://api.nexmo.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        api_key: VONAGE_API_KEY,
-        api_secret: VONAGE_API_SECRET,
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        channel: 'sms',
+        message_type: 'text',
         from: SMS_SENDER,
         to: to.replace('+', ''),
         text,
       }),
     });
-    payload = await upstream.json();
+    payload = await upstream.json().catch(() => null);
   } catch (err) {
     return res.status(502).json({ ok: false, error: `Could not reach SMS provider: ${err.message}` });
   }
 
-  // Vonage answers 200 even when the send fails; status "0" in the first message is the real result.
-  const result = payload?.messages?.[0];
-  if (result?.status !== '0') {
+  // The Messages API accepts with 202 and reports failures as RFC 7807 problem details.
+  if (!upstream.ok) {
     return res.status(502).json({
       ok: false,
-      error: result?.['error-text'] || 'SMS provider rejected the message',
-      providerStatus: result?.status ?? null,
+      error: payload?.detail || payload?.title || `SMS provider returned ${upstream.status}`,
+      providerStatus: upstream.status,
     });
   }
 
-  return res.status(200).json({
-    ok: true,
-    to,
-    text,
-    messageId: result['message-id'],
-    remainingBalance: result['remaining-balance'],
-  });
+  return res.status(200).json({ ok: true, to, text, messageId: payload?.message_uuid ?? null });
 }

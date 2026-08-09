@@ -15,7 +15,7 @@ The timestamp is generated at request time in `Europe/Skopje`.
 
 - [index.html](index.html) — the form (number + PIN), posts JSON to `/api/send`.
 - [api/send.js](api/send.js) — validates the PIN, normalizes the number to E.164, checks it against
-  the whitelist, builds the timestamp, and calls the Vonage SMS API with `fetch`.
+  the whitelist, builds the timestamp, and calls the Vonage Messages API with `fetch`.
 - [test.js](test.js) — `node test.js` checks normalization and the timestamp. Sends nothing.
 
 Any number not in `ALLOWED_NUMBERS` gets a 403 and no provider call is made.
@@ -58,8 +58,10 @@ Unset `DRY_RUN` before the first real send.
 
 ## Notes
 
-- `SMS_SENDER` is whatever Vonage lets you use — an alphanumeric ID like `Ticket`, or the assigned
-  trial number. Whether North Macedonia accepts alphanumeric sender IDs only becomes clear on the
-  first live send; if it's rejected or replaced, use the trial number instead.
+- Uses the **Messages API** (`api.nexmo.com/v1/messages`) with Basic auth, which is what new Vonage
+  accounts are provisioned for. If sends fail complaining about the API type, check
+  Dashboard → Settings → *Default SMS Setting* and make sure it is set to **Messages API**.
+- `SMS_SENDER` defaults to `Vonage APIs`. A custom alphanumeric ID may be silently replaced by the
+  Macedonian carrier; if the handset shows something else, that's the carrier, not this code.
 - No rate limiting. Serverless functions are stateless, so it would need a paid store. The PIN plus
   a one-number whitelist is the cheap equivalent.
